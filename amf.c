@@ -844,7 +844,7 @@ static inline void amf_write_zstring(amf_serialize_output buf, zval * zstr AMFTS
 
 		buf->last_chunk->size = 1;  /*  zval chun */
 		buf->last_chunk->zv = zstr;
-		ZVAL_ADDREF(zstr);
+		Z_ADDREF_P(zstr);
 		buf->chunks++;
 		buf->left_in_part -= sizeof(amf_string_chunk);
 
@@ -1185,7 +1185,7 @@ static void amf3_serialize_object(amf_serialize_output buf,zval**struc, amf_seri
 		int resultType = AMFC_TYPEDOBJECT;
 		int resultValueLength = 0;
 		zval** resultValue = struc;
-		int deallocResult = (*struc)->refcount;
+		int deallocResult = Z_REFCOUNT_PP(struc);
 
 		resultType = amf_perform_serialize_callback(struc, &className,&classNameLen,&resultValue,var_hash TSRMLS_CC);
 		
@@ -2392,7 +2392,7 @@ PHP_FUNCTION(amf_encode)
 		{
 			pbuf = tpbuf;
 			asSB = 1;
-			 /* ZVAL_ADDREF(*zzOutputSB) */
+			 /* Z_ADDREF_P(*zzOutputSB) */
 			 /* return_value = *zzOutputSB */
 		}
 	}
@@ -2670,7 +2670,7 @@ static int amf3_read_string(zval **rval, const unsigned char **p, const unsigned
 		}
 		else
 		{
-			newval->refcount--;
+			Z_DELREF_P(newval);
 		}
 		*rval = newval;
 	}
@@ -2824,7 +2824,7 @@ static int amf_read_objectdata(zval **rval, const unsigned char **p, const unsig
 	{
 		if(zClassname != NULL)
 		{
-			ZVAL_ADDREF(zClassname);
+			Z_ADDREF_P(zClassname);
 			add_assoc_zval(*rval, "_explicitType",zClassname);
 		}
 	}
@@ -3045,7 +3045,7 @@ static int amf3_unserialize_var(zval **rval, const unsigned char **p, const unsi
 				MAKE_STD_ZVAL(zClassDef);
 				amf_array_init(zClassDef,nClassMemberCount+2 TSRMLS_CC); 
 				add_next_index_long(zClassDef,(bTypedObject?1:0)|nClassMemberCount << AMF_CLASS_MEMBERCOUNT_SHIFT |iDynamicObject|iExternalizable);
-				ZVAL_ADDREF(zClassname);
+				Z_ADDREF_P(zClassname);
 				add_next_index_zval(zClassDef, zClassname); 
 		
 				 /*  loop over classMemberCoun */
@@ -3056,7 +3056,7 @@ static int amf3_unserialize_var(zval **rval, const unsigned char **p, const unsi
 					{
 						break;
 					}
-					ZVAL_ADDREF(zMemberName);
+					Z_ADDREF_P(zMemberName);
 					add_next_index_zval(zClassDef,zMemberName);  /*  pass referenc */
 				}
 
@@ -3201,7 +3201,7 @@ static int amf3_unserialize_var(zval **rval, const unsigned char **p, const unsi
 				{
 					if(bTypedObject != 0)
 					{
-						ZVAL_ADDREF(zClassname);
+						Z_ADDREF_P(zClassname);
 						add_assoc_zval(*rval, "_explicitType",zClassname);
 					}
 				}
