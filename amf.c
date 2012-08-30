@@ -1811,9 +1811,11 @@ static void amf3_serialize_array(amf_serialize_output buf, HashTable * myht, amf
 			 /* if(num_count > 0 && (str_count > || max_index != num_count-1) */
 			if((str_count > 0 && num_count == 0) || (num_count > 0 && max_index != (int)num_count-1))
 			{
-				amf3_write_objecthead(buf, AMF_INLINE_ENTITY|AMF_INLINE_CLASS|AMF_CLASS_DYNAMIC); 
+				amf_write_byte(buf,AMF3_ARRAY);
+				
 				amf3_write_emptystring(buf AMFTSRMLS_CC);  /*  classname=" */
-				var_hash->nextClassIndex++; //http://pecl.php.net/bugs/bug.php?id=12668&edit=1
+				var_hash->nextObjectIndex++; //http://pecl.php.net/bugs/bug.php?id=12668&edit=1
+				
 				zend_hash_internal_pointer_reset_ex(myht, &pos);
 				for (;; zend_hash_move_forward_ex(myht, &pos)) {
 					int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
@@ -2947,7 +2949,7 @@ static int amf3_unserialize_var(zval **rval, const unsigned char **p, const unsi
 				}
 
 				 /*  TODO test for key as 0 and key as " */
-				if(iIndex != 0 && (pEndOfString == NULL || *pEndOfString == 0))
+				if(htOutput != NULL && iIndex != 0 && (pEndOfString == NULL || *pEndOfString == 0))
 				{
 					zend_hash_index_update(htOutput, iIndex, &zValue, sizeof(zval*),NULL);  /*  pas */
 				}
