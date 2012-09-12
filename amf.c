@@ -764,7 +764,7 @@ static int amf_cache_zval_typed(amf_serialize_data_t*var_hash, zval * val, ulong
 	case IS_RESOURCE: obj = (HashTable*)Z_LVAL_P(val); break;
 	default: return SUCCESS;
 	}
-
+	
 	return amf_cache_zval(var_hash,cache,obj,old,version == 0 ? &(var_hash->nextObject0Index) : &(var_hash->nextObjectIndex),action);
 }
 
@@ -1256,22 +1256,33 @@ static void amf3_serialize_object(amf_serialize_output buf,zval**struc, amf_seri
 	const char * className = Z_TYPE_PP(struc) == IS_RESOURCE ? "" : Z_OBJCE_PP(struc)->name;
 	int classNameLen = strlen(className);
 	ulong objectIndex;
-
-	 /*  if the object is already in cache then just go for i */
-	if(amf_cache_zval_typed(var_hash, *struc, &objectIndex, 1, 2 TSRMLS_CC) == FAILURE)
+	
+	if (strcmp(className, "stdClass") == 0) /* stdClass objects are more simple and don't require callback etc */
 	{
-		amf3_write_objecthead(buf, (objectIndex << 1) AMFTSRMLS_CC);
+		/* Probe object cache and store, if not yet present. */
+		if(amf_cache_zval_typed(var_hash, *struc, &objectIndex, 1, 0 TSRMLS_CC) == FAILURE)
+		{
+			amf3_write_objecthead(buf, (objectIndex << 1) AMFTSRMLS_CC);
+		}
+		else
+		{
+			amf3_serialize_object_default(buf, Z_OBJPROP_PP(struc), "",0,var_hash TSRMLS_CC);
+		}
 		return;
 	}
-
-	if(strcmp(className, "stdClass") == 0)  /*  never for resource */
-		amf3_serialize_object_default(buf, Z_OBJPROP_PP(struc), "",0,var_hash TSRMLS_CC);
 	else
 	{
 		int resultType = AMFC_TYPEDOBJECT;
 		int resultValueLength = 0;
 		zval** resultValue = struc;
 		int deallocResult = Z_REFCOUNT_PP(struc);
+
+		 /*  if the object is already in cache then just go for it */
+		if(amf_cache_zval_typed(var_hash, *struc, &objectIndex, 1, 2 TSRMLS_CC) == FAILURE)
+		{
+			amf3_write_objecthead(buf, (objectIndex << 1) AMFTSRMLS_CC);
+			return;
+		}
 
 		resultType = amf_perform_serialize_callback(struc, &className,&classNameLen,&resultValue,var_hash TSRMLS_CC);
 		
