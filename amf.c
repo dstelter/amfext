@@ -1872,7 +1872,6 @@ static void amf3_serialize_array(amf_serialize_output buf, HashTable * myht, amf
 		{					
 			int max_index = -1;
 			ulong str_count = 0, num_count = 0;
-			int has_negative = 0;
 
 			zend_hash_internal_pointer_reset_ex(myht, &pos);
 			for (;; zend_hash_move_forward_ex(myht, &pos)) {
@@ -1888,18 +1887,9 @@ static void amf3_serialize_array(amf_serialize_output buf, HashTable * myht, amf
 					{
 						max_index =  keyIndex;
 					}
-					/*
-					if(keyIndex < 0)
-					{
-						has_negative = 1;
-						str_count++;
-					}
-					else
-					{
-						num_count++;
-					}
-					*/
-					num_count++; // Emulate broken zend behavior and treat all numeric indezes equally
+					// Usually we would not to treat sparse arrays / negative keys differently.
+					// However, Zend fails to do this as well and the goal is to emulate Zend behavior...
+					num_count++;
 					break;
 				case HASH_KEY_IS_STRING:
 					str_count++;
@@ -1908,13 +1898,12 @@ static void amf3_serialize_array(amf_serialize_output buf, HashTable * myht, amf
 			}
 
 			 /*  string array or not sequenced array => associativ */
-			 /* if(num_count > 0 && (str_count > || max_index != num_count-1) */
-			if(0 && ((str_count > 0 && num_count == 0) || (num_count > 0 && max_index != (int)num_count-1)))
+			amf_write_byte(buf,AMF3_ARRAY);
+			amf3_write_int(buf,(num_count << 1) | AMF_INLINE_ENTITY AMFTSRMLS_CC);
+
+			 /*  string keys or negativ */
+			if(str_count > 0)
 			{
-				amf_write_byte(buf,AMF3_ARRAY);
-			
-				amf3_write_emptystring(buf AMFTSRMLS_CC);  /*  classname=" */
-				
 				zend_hash_internal_pointer_reset_ex(myht, &pos);
 				for (;; zend_hash_move_forward_ex(myht, &pos)) {
 					int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
@@ -1922,108 +1911,50 @@ static void amf3_serialize_array(amf_serialize_output buf, HashTable * myht, amf
 					{
 						break;
 					}
-					switch (keyType) {
-					case HASH_KEY_IS_LONG:
-							{
-								char txt[20];
-								sprintf(txt,"%d",keyIndex);
-								amf3_write_string(buf, txt,strlen(txt),AMF_STRING_AS_SAFE_TEXT,var_hash TSRMLS_CC);
-							}
-							break;
-						case HASH_KEY_IS_STRING:
-							amf3_write_string(buf, key,key_len-1,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
-							break;							
-					}
-					if (zend_hash_get_current_data_ex(myht, (void **) &data, &pos) != SUCCESS || !data )
+					else if (keyType == HASH_KEY_IS_STRING)
 					{
-						amf_write_byte(buf, AMF3_UNDEFINED);
+						amf3_write_string(buf, key,key_len-1,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
 					}
-					else 
+					else
+					{
+						continue;
+					}
+
+					if (zend_hash_get_current_data_ex(myht, (void **) &data, &pos) == SUCCESS && data != NULL) 
 					{
 						amf3_serialize_var(buf, data, var_hash TSRMLS_CC);
 					}
-				}
-				amf3_write_emptystring(buf AMFTSRMLS_CC);
-			}
-			else
-			{
-				//var_hash->nextObjectIndex++;
-				
-				amf_write_byte(buf,AMF3_ARRAY);
-				amf3_write_int(buf,(num_count << 1) | AMF_INLINE_ENTITY AMFTSRMLS_CC);
-
-				 /*  string keys or negativ */
-				if(str_count > 0)
-				{
-					zend_hash_internal_pointer_reset_ex(myht, &pos);
-					for (;; zend_hash_move_forward_ex(myht, &pos)) {
-						int skip = 0;
-						int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
-						if (keyType == HASH_KEY_NON_EXISTANT)
-						{
-							break;
-						}
-						switch (keyType) {
-						case HASH_KEY_IS_LONG:
-								if(keyIndex < 0)
-								{
-									char txt[20];
-									sprintf(txt,"%d",keyIndex);
-									amf3_write_string(buf, txt,strlen(txt),AMF_STRING_AS_SAFE_TEXT,var_hash TSRMLS_CC);
-								}
-								else
-								{
-									skip = 1;  /*  numeric keys are dumped in sequential mod */
-								}
-								break;
-							case HASH_KEY_IS_STRING:
-								amf3_write_string(buf, key,key_len-1,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
-								break;							
-						}
-						if(skip)
-							continue;
-
-						if (zend_hash_get_current_data_ex(myht, (void **) &data, &pos) == SUCCESS && data != NULL) 
-						{
-							amf3_serialize_var(buf, data, var_hash TSRMLS_CC);
-						}
-						else
-						{
-							amf_write_byte(buf, AMF3_UNDEFINED);
-						}
+					else
+					{
+						amf_write_byte(buf, AMF3_UNDEFINED);
 					}
 				}
-				 /*  place the empty strin */
-				amf3_write_emptystring(buf AMFTSRMLS_CC);
-				
-				 /*  now the linear data, we need to lookup the data because of the sortin */
-				if(num_count > 0)
-				{
-					zend_hash_internal_pointer_reset_ex(myht, &pos);
-					for (;; zend_hash_move_forward_ex(myht, &pos)) {
-						int skip = 0;
-						int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
-						if (keyType == HASH_KEY_NON_EXISTANT)
-						{
-							break;
-						}
-						switch (keyType) {
-						case HASH_KEY_IS_LONG:
-							break;
-						default:
-							skip = 1;
-						}
-						if(skip)
-							continue;
+			}
+			 /*  place the empty string to indicate the end of key/value pairs */
+			amf3_write_emptystring(buf AMFTSRMLS_CC);
 
-						if (zend_hash_get_current_data_ex(myht, (void **) &data, &pos) == SUCCESS && data != NULL) 
-						{
-							amf3_serialize_var(buf, data, var_hash TSRMLS_CC);
-						}
-						else
-						{
-							amf_write_byte(buf, AMF3_UNDEFINED);
-						}
+			 /*  now the linear data, we need to lookup the data because of the sorting */
+			if(num_count > 0)
+			{
+				zend_hash_internal_pointer_reset_ex(myht, &pos);
+				for (;; zend_hash_move_forward_ex(myht, &pos)) {
+					int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
+					if (keyType == HASH_KEY_NON_EXISTANT)
+					{
+						break;
+					}
+					else if (keyType != HASH_KEY_IS_LONG)
+					{
+						continue;
+					}
+
+					if (zend_hash_get_current_data_ex(myht, (void **) &data, &pos) == SUCCESS && data != NULL) 
+					{
+						amf3_serialize_var(buf, data, var_hash TSRMLS_CC);
+					}
+					else
+					{
+						amf_write_byte(buf, AMF3_UNDEFINED);
 					}
 				}
 			}
