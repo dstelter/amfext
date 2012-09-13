@@ -103,7 +103,7 @@ enum AMF3Codes { AMF3_UNDEFINED,AMF3_NULL,AMF3_FALSE,AMF3_TRUE,AMF3_INTEGER,AMF3
 enum AMFCallbackResult { AMFC_RAW, AMFC_XML, AMFC_OBJECT, AMFC_TYPEDOBJECT, AMFC_ANY, AMFC_ARRAY,AMFC_NONE,AMFC_BYTEARRAY};
 
 /**  flags passed to amf_encode and amf_decode */
-enum AMFFlags { AMF_AMF3 = 1, AMF_BIGENDIAN=2,AMF_ASSOC=4,AMF_POST_DECODE = 8,AMF_AS_STRING_BUILDER = 16, AMF_TRANSLATE_CHARSET = 32,AMF_TRANSLATE_CHARSET_FAST = 32|64, AMF_SKIP_CACHE=128};
+enum AMFFlags { AMF_AMF3 = 1, AMF_BIGENDIAN=2,AMF_ASSOC=4,AMF_POST_DECODE = 8,AMF_AS_STRING_BUILDER = 16, AMF_TRANSLATE_CHARSET = 32,AMF_TRANSLATE_CHARSET_FAST = 32|64};
 
 /**  events invoked by the callback */
 enum AMFEvent { AMFE_MAP = 1, AMFE_POST_OBJECT, AMFE_POST_XML, AMFE_MAP_EXTERNALIZABLE,AMFE_POST_BYTEARRAY,AMFE_TRANSLATE_CHARSET};
@@ -678,11 +678,6 @@ static inline int amf_get_assoc_long(HashTable * ht, const char * field, int def
 */
 static inline int amf_cache_zval(amf_serialize_data_t *amf, HashTable *var_hash, HashTable *var, ulong * old, int * nextIndex, int action)
 {
-	if ((amf->flags & AMF_SKIP_CACHE) != 0)
-	{
-		return SUCCESS;
-	}
-	
 	if(sizeof(ulong) >= sizeof(int*))
 	{
 		ulong * old_idx = NULL;
@@ -751,11 +746,6 @@ static int amf_cache_zval_typed(amf_serialize_data_t*var_hash, zval * val, ulong
 {
 	HashTable *cache = version == 0 ? &(var_hash->objects0) : &(var_hash->objects);
 	HashTable *obj;
-	
-	if ((var_hash->flags & AMF_SKIP_CACHE) != 0)
-	{
-		return SUCCESS;
-	}
 	
 	switch(Z_TYPE_P(val))
 	{
