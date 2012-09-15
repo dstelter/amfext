@@ -1329,6 +1329,7 @@ static void amf3_serialize_object(amf_serialize_output buf,zval**struc, amf_seri
 
 			break;
 		case AMFC_ARRAY:
+			/* TODO: Callback conversion from objects to arrays should consider broken zend caching */
 			if(amf_cache_zval_typed(var_hash, *resultValue, &objectIndex,1,0 TSRMLS_CC) == FAILURE)
 			{
 				amf3_write_objecthead(buf, objectIndex << 1 AMFTSRMLS_CC);
@@ -1996,15 +1997,10 @@ static void amf3_serialize_var(amf_serialize_output buf, zval **struc, amf_seria
 			amf3_serialize_object(buf,struc,var_hash TSRMLS_CC); 
 			return;
 		case IS_ARRAY: 			
-			if(amf_cache_zval(var_hash, &(var_hash->objects), HASH_OF(*struc), &objectIndex,&(var_hash->nextObjectIndex),0) == FAILURE)
-			{
-				amf_write_byte(buf, AMF3_ARRAY);
-				amf3_write_int(buf, (objectIndex << 1) AMFTSRMLS_CC);
-			}
-			else
-			{
-				amf3_serialize_array(buf, HASH_OF(*struc), var_hash TSRMLS_CC);
-			}
+			/* Emulating broken Zend behavior:
+			   Arrays are stored in the cache, but aren't actually fetched from it. */
+			amf_cache_zval(var_hash, &(var_hash->objects), HASH_OF(*struc), &objectIndex,&(var_hash->nextObjectIndex),0);
+			amf3_serialize_array(buf, HASH_OF(*struc), var_hash TSRMLS_CC);
 			break;
 		default:
 			php_error_docref(NULL TSRMLS_CC, E_NOTICE, "amf unknown PHP type %d\n",Z_TYPE_PP(struc));
