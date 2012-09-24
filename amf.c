@@ -157,6 +157,14 @@ typedef struct
 	int nextStringIndex;
 } amf_serialize_data_t,amf_unserialize_data_t;
 
+typedef struct
+{
+	int id;
+	zend_llist properties; /* String keys of sealed properties */
+	int isDynamic;
+	int isExternalizable;
+} amf_trait_data_t;
+
 /**
 * The result of the encoder is a string that grows depending on the input. When using memory streams or 
 * smart_str the allocation of memory is not efficient because these methods allow the generic access of the string.
@@ -1004,10 +1012,10 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 	uint key_len;
 	HashPosition pos;
 	ulong*val;
-	int isDynamic = (classNameLen == 0 ? AMF_CLASS_DYNAMIC : 0); // Only encode stdClass as dynamic
-	int isExternalizable = 0; /* AMF_CLASS_EXTERNALIZABL */
+	int memberCount;
+	amf_trait_data_t* trait;
 	
-	char *cacheClassName;
+	const char *cacheClassName;
 	int cacheClassNameLen;
 	
 	if (classNameLen == 0) {
@@ -1018,16 +1026,31 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 		cacheClassNameLen = classNameLen;
 	}
 	
-	if (zend_hash_find(&(var_hash->classes), (char*)cacheClassName, cacheClassNameLen, (void**)&val) == SUCCESS) 
+	if (zend_hash_find(&(var_hash->classes), (char*)cacheClassName, cacheClassNameLen, (void**)&trait) == SUCCESS) 
 	{
-		amf3_write_objecthead(buf,*val << AMF_CLASS_SHIFT | AMF_INLINE_ENTITY AMFTSRMLS_CC);
+		trait = *(amf_trait_data_t**)trait;
+		amf3_write_objecthead(buf,trait->id << AMF_CLASS_SHIFT | AMF_INLINE_ENTITY AMFTSRMLS_CC);
+		memberCount = zend_llist_count(&trait->properties);
 	}
 	else
 	{
-		ulong var_no = var_hash->nextClassIndex++;
-		int memberCount = 0;
+		trait = pemalloc(sizeof(amf_trait_data_t), 0);
 		
-		if (!isDynamic)
+		// Initialize new trait:
+		// Iterate over *current* (correct: default) properties and store
+		// them in the properties list.
+		// TODO: Add dynamic properties on the fly.
+		memset(trait, 0x00, sizeof(*trait));
+		
+		trait->id = var_hash->nextClassIndex++;
+		trait->isDynamic = (classNameLen == 0) ? AMF_CLASS_DYNAMIC : 0;
+		trait->isExternalizable = 0; /* AMF_CLASS_EXTERN */
+		
+		// FIXME: This implies a maximum key length on 40 characters.
+		#define MAX_SEALED_KEY_LENGTH 40
+		zend_llist_init(&trait->properties, MAX_SEALED_KEY_LENGTH, NULL, 0);
+		
+		if (!trait->isDynamic)
 		{
 			// Count members (TODO: Figure out a more efficient way to do this [hash table size?]
 			zend_hash_internal_pointer_reset_ex(myht, &pos);
@@ -1039,26 +1062,35 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 				}
 				else if (keyType == HASH_KEY_IS_STRING)
 				{
+					char tmp[MAX_SEALED_KEY_LENGTH];
+					
 					if(key[0] == 0 || key[0] == '_')
 					{
 						continue;
 					}
-					memberCount++;
-				}
-				else
-				{
-					memberCount++;
+					else if (key_len >= MAX_SEALED_KEY_LENGTH)
+					{
+						php_error_docref(NULL TSRMLS_CC, E_ERROR, "Object key length exceeds limit of %d characters.", MAX_SEALED_KEY_LENGTH);
+						return;
+					}
+					
+					// Store length and key in temporary buffer and add to list
+					tmp[0] = key_len-1;
+					memcpy(&tmp[1], key, key_len);
+					zend_llist_add_element(&trait->properties, (void*)tmp);
 				}
 			}
 		}
 		
-		zend_hash_add(&(var_hash->classes), (char*)cacheClassName, cacheClassNameLen, &var_no, sizeof(var_no), NULL);
-		amf3_write_objecthead(buf,(memberCount << AMF_CLASS_MEMBERCOUNT_SHIFT) | isExternalizable | isDynamic | AMF_INLINE_CLASS | AMF_INLINE_ENTITY  AMFTSRMLS_CC);
+		memberCount = zend_llist_count(&trait->properties);
+		zend_hash_add(&(var_hash->classes), (char*)cacheClassName, cacheClassNameLen, &trait, sizeof(trait), NULL);
+		amf3_write_objecthead(buf,(memberCount << AMF_CLASS_MEMBERCOUNT_SHIFT) | trait->isExternalizable | trait->isDynamic | AMF_INLINE_CLASS | AMF_INLINE_ENTITY  AMFTSRMLS_CC);
 		amf3_write_string(buf, className,classNameLen,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
 		
 		// Write public member names
-		if (!isDynamic)
+		if (memberCount > 0)
 		{
+			/*
 			zend_hash_internal_pointer_reset_ex(myht, &pos);
 			for (;; zend_hash_move_forward_ex(myht, &pos)) {
 				int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
@@ -1083,47 +1115,29 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 					amf3_write_string(buf,key,key_len-1,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
 				}
 			}
-		}
-		
-	}
-
-	 /*  We are always working with dynamic objects except for RecordSe */
-	 /*  for(j = 0; j < memberCount; j++) fixed value */
-
-	 /*  iterate over all the key */
-	zend_hash_internal_pointer_reset_ex(myht, &pos);
-	for (;; zend_hash_move_forward_ex(myht, &pos)) {
-		int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
-		if (keyType == HASH_KEY_NON_EXISTANT)
-		{
-			break;
-		}
-		
-		if (keyType == HASH_KEY_IS_STRING && (key[0] == 0 || key[0] == '_'))
-		{
-			continue;
-		}
-		
-		/* Only write keys for dynamic classes */
-		if (isDynamic)
-		{
-			 /*  is it possible */
-			if(keyType == HASH_KEY_IS_LONG)
-			{
-				char txt[20];
-				sprintf(txt,"%d",keyIndex);
-				amf3_write_string(buf,txt,strlen(txt), AMF_STRING_AS_SAFE_TEXT,var_hash TSRMLS_CC);
-			}
-			else if(keyType == HASH_KEY_IS_STRING)
-			{
-				amf3_write_string(buf,key,key_len-1,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
-			}
-		}
+			*/
 			
-		/* we should still add element even if it's not OK, since we already wrote the length of the array before */
-		if (zend_hash_get_current_data_ex(myht, (void **) &data, &pos) != SUCCESS || !data )
+			// Write list of public members
+			for (key = (char*)zend_llist_get_first(&trait->properties);
+				key != NULL;
+				key = (char*)zend_llist_get_next(&trait->properties))
+			{
+				amf3_write_string(buf, &key[1], key[0], AMF_STRING_AS_SAFE_TEXT, var_hash TSRMLS_CC);
+			}
+		}
+	}
+	
+	/* Write sealed attributes */
+	for (key = (char*)zend_llist_get_first(&trait->properties);
+		key != NULL;
+		key = (char*)zend_llist_get_next(&trait->properties))
+	{
+		if (zend_hash_find(myht, &key[1], key[0]+1, (void**)&data) != SUCCESS || !data)
 		{
-			amf_write_byte(buf, AMF3_UNDEFINED);
+			// Correct behavior: AMF3_UNDEFINED
+			// Zend behavior:    AMF3_NULL
+			amf_write_byte(buf, AMF3_NULL);
+			
 		}
 		else
 		{
@@ -1131,9 +1145,42 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 		}
 	}
 	
-	// Only terminate key/value portition for dynamic objects
-	if (isDynamic)
+	// TODO: Write remaining properties
+	// (We could save the default property count at trait generation and compare
+	// it to the current value...)
+	//
+	// For now just print everything in case we have no sealed attributes
+	if (trait->isDynamic)
 	{
+		/*  iterate over all the key */
+		zend_hash_internal_pointer_reset_ex(myht, &pos);
+		for (;; zend_hash_move_forward_ex(myht, &pos)) {
+			int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
+			if (keyType == HASH_KEY_NON_EXISTANT)
+			{
+				break;
+			}
+			
+			// Skip non-string keys and empty/hidden keys
+			if (keyType != HASH_KEY_IS_STRING || key[0] == 0 || key[0] == '_')
+			{
+				continue;
+			}
+			
+			amf3_write_string(buf,key,key_len-1,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
+			
+			/* we should still add element even if it's not OK, since we already wrote the length of the array before */
+			if (zend_hash_get_current_data_ex(myht, (void **) &data, &pos) != SUCCESS || !data )
+			{
+				amf_write_byte(buf, AMF3_UNDEFINED);
+			}
+			else
+			{
+				amf3_serialize_var(buf, data, var_hash TSRMLS_CC);
+			}
+		}
+		
+		// Terminate key/value portition for dynamic objects
 		amf3_write_emptystring(buf AMFTSRMLS_CC);
 	}
 }
