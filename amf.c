@@ -1091,33 +1091,6 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 		// Write public member names
 		if (memberCount > 0)
 		{
-			/*
-			zend_hash_internal_pointer_reset_ex(myht, &pos);
-			for (;; zend_hash_move_forward_ex(myht, &pos)) {
-				int keyType = zend_hash_get_current_key_ex(myht, &key, &key_len, (ulong*)&keyIndex, 0, &pos);
-				if (keyType == HASH_KEY_NON_EXISTANT)
-				{
-					break;
-				}
-				else if (keyType == HASH_KEY_IS_LONG)
-				{
-					// TODO: Use more efficient call like itoa
-					char txt[20];
-					sprintf(txt, "%d", keyIndex);
-					amf3_write_string(buf, txt, strlen(txt), AMF_STRING_AS_SAFE_TEXT, var_hash TSRMLS_CC);
-				}
-				else if (keyType == HASH_KEY_IS_STRING)
-				{
-					// TODO: What exactly does this indicate?
-					if(key[0] == 0  || key[0] == '_')
-					{
-						continue;
-					}
-					amf3_write_string(buf,key,key_len-1,AMF_STRING_AS_TEXT,var_hash TSRMLS_CC);
-				}
-			}
-			*/
-			
 			// Write list of public members
 			for (key = (char*)zend_llist_get_first_ex(&trait->properties, &lpos);
 				key != NULL;
