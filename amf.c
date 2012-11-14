@@ -1014,6 +1014,7 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 	ulong*val;
 	int memberCount;
 	amf_trait_data_t* trait;
+	zend_llist_position lpos;
 	
 	const char *cacheClassName;
 	int cacheClassNameLen;
@@ -1118,9 +1119,9 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 			*/
 			
 			// Write list of public members
-			for (key = (char*)zend_llist_get_first(&trait->properties);
+			for (key = (char*)zend_llist_get_first_ex(&trait->properties, &lpos);
 				key != NULL;
-				key = (char*)zend_llist_get_next(&trait->properties))
+				key = (char*)zend_llist_get_next_ex(&trait->properties, &lpos))
 			{
 				amf3_write_string(buf, &key[1], key[0], AMF_STRING_AS_SAFE_TEXT, var_hash TSRMLS_CC);
 			}
@@ -1128,9 +1129,9 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 	}
 	
 	/* Write sealed attributes */
-	for (key = (char*)zend_llist_get_first(&trait->properties);
+	for (key = (char*)zend_llist_get_first_ex(&trait->properties, &lpos);
 		key != NULL;
-		key = (char*)zend_llist_get_next(&trait->properties))
+		key = (char*)zend_llist_get_next_ex(&trait->properties, &lpos))
 	{
 		if (zend_hash_find(myht, &key[1], key[0]+1, (void**)&data) != SUCCESS || !data)
 		{
