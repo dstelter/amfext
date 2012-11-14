@@ -254,8 +254,8 @@ typedef amf_serialize_output_t* amf_serialize_output;
 
 #define  AMFTSRMLS_CC
 #define  AMFTSRMLS_DC
-#define  AMFPARMAXSIZE 32768*4
-#define  AMFPARTSIZE 64 
+#define  AMFPARMAXSIZE 2097152  // 2 MB easily fit the startup call
+#define  AMFPARTSIZE   8192     // We have fairly huge requests (especilly startup!)
 
 #define amf_PARTFLAG_ALLOCATED 1
 #define amf_PARTFLAG_ZVAL 2
