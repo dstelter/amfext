@@ -42,7 +42,7 @@ enum AMF3Codes { AMF3_UNDEFINED,AMF3_NULL,AMF3_FALSE,AMF3_TRUE,AMF3_INTEGER,AMF3
 enum AMFCallbackResult { AMFC_RAW, AMFC_XML, AMFC_OBJECT, AMFC_TYPEDOBJECT, AMFC_ANY, AMFC_ARRAY,AMFC_NONE,AMFC_BYTEARRAY};
 
 /**  flags passed to amf_encode and amf_decode */
-enum AMFFlags { AMF_AMF3 = 1, AMF_BIGENDIAN=2,AMF_ASSOC=4,AMF_POST_DECODE = 8,AMF_AS_STRING_BUILDER = 16, AMF_TRANSLATE_CHARSET = 32,AMF_TRANSLATE_CHARSET_FAST = 32|64};
+enum AMFFlags { AMF_AMF3 = 1, AMF_BIGENDIAN=2,AMF_ASSOC=4,AMF_POST_DECODE = 8,AMF_AS_STRING_BUILDER = 16, AMF_TRANSLATE_CHARSET = 32, AMF_TRANSLATE_CHARSET_FAST = 32|64, AMF_FAST_CLASSMAPPING = 128};
 
 /**  events invoked by the callback */
 enum AMFEvent { AMFE_MAP = 1, AMFE_POST_OBJECT, AMFE_POST_XML, AMFE_MAP_EXTERNALIZABLE,AMFE_POST_BYTEARRAY,AMFE_TRANSLATE_CHARSET};
@@ -107,6 +107,7 @@ PHP_MINIT_FUNCTION(amf)
 	REGISTER_LONG_CONSTANT("AMF_AS_STRING_BUILDER", AMF_AS_STRING_BUILDER, CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("AMF_TRANSLATE_CHARSET", AMF_TRANSLATE_CHARSET, CONST_CS | CONST_PERSISTENT);
 	REGISTER_LONG_CONSTANT("AMF_TRANSLATE_CHARSET_FAST", AMF_TRANSLATE_CHARSET_FAST, CONST_CS | CONST_PERSISTENT);
+	REGISTER_LONG_CONSTANT("AMF_FAST_CLASSMAPPING", AMF_FAST_CLASSMAPPING, CONST_CS | CONST_PERSISTENT);
 	return SUCCESS;
 }
 
@@ -1170,7 +1171,8 @@ static void amf3_serialize_object_default(amf_serialize_output buf,HashTable* my
 }
 
 static int amf_perform_serialize_callback_event(int ievent, zval*arg0,zval** zResultValue, int shared, amf_serialize_data_t * var_hash TSRMLS_DC)
-{	
+{
+	
 	if(var_hash->callbackFx != NULL)
 	{
 		int r;  /*  result from functio */
@@ -1235,6 +1237,41 @@ static int amf_perform_serialize_callback(zval**struc, const char **className, i
 									zval*** resultValue, amf_serialize_data_t * var_hash TSRMLS_DC)
 {
 	int resultType = AMFC_TYPEDOBJECT;
+	
+	if(var_hash->flags & AMF_FAST_CLASSMAPPING)
+	{
+		if (Z_OBJ_HT_P(*struc)->get_class_entry)
+		{
+			zend_class_entry *ce = Z_OBJCE_P(*struc);
+			if (ce)
+			{
+				if (zend_hash_exists(&ce->function_table, "getasclassname", sizeof("getASClassName")))
+				{
+					zval fname;
+					zval *retval_ptr = NULL;
+					
+					INIT_PZVAL(&fname);
+					ZVAL_STRINGL(&fname, "getASClassName", sizeof("getASClassName") - 1, 0);
+					if (call_user_function_ex(&ce->function_table, struc, &fname, &retval_ptr, 0, 0, 0, NULL TSRMLS_CC) == SUCCESS && retval_ptr)
+					{
+						if (Z_TYPE_PP(&retval_ptr) == IS_STRING)
+						{
+							*className = Z_STRVAL_PP(&retval_ptr);
+							*classNameLen = Z_STRLEN_PP(&retval_ptr);
+							// FIXME: This leaks the class name string, but there is no clean way of padding the destruction responsibility :/
+							return resultType;
+						}
+						else
+						{
+							*resultValue = NULL;
+							zval_ptr_dtor(&retval_ptr);
+							php_error_docref(NULL TSRMLS_CC, E_ERROR, "getASClassName must return string");
+						}
+					}
+				}
+			}
+		}
+	}
 	
 	if(var_hash->callbackFx != NULL)
 	{
