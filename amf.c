@@ -65,7 +65,7 @@ enum AMFStringTranslate { AMF_TO_UTF8, AMF_FROM_UTF8};
 
 /*  module Declarations {{{1*/
 
-static function_entry amf_functions[] = {
+static zend_function_entry amf_functions[] = {
     PHP_FE(amf_encode, NULL)
     PHP_FE(amf_decode, NULL)
     PHP_FE(amf_join_test, NULL)
@@ -2732,7 +2732,7 @@ static int amf0_read_string(zval **rval, const unsigned char **p, const unsigned
 			return SUCCESS;
 		}
 	}
-	ZVAL_STRINGL(*rval, (char*)src, slength, 1)
+	ZVAL_STRINGL(*rval, (char*)src, slength, 1);
 	return SUCCESS;
 }
 
